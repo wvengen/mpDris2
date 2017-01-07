@@ -91,6 +91,9 @@ params = {
     'music_dir': '',
     'cover_regex': re.compile(r'^(album|cover|\.?folder|front).*\.(gif|jpeg|jpg|png)$',
                               re.I | re.X),
+    # Cover art (remote)
+    'cover_url': None,
+    'cover_image': 'cover.jpg',
     # Bling
     'mmkeys': True,
     'notify': (using_gi_notify or using_old_notify),
@@ -560,11 +563,12 @@ class MPDWrapper(object):
                 self._metadata['xesam:album'] = mpd_meta['name']
 
         if 'file' in mpd_meta:
-            song_url = mpd_meta['file']
+            song_relpath = mpd_meta['file']
+            song_url = song_relpath
             if not any([song_url.startswith(prefix) for prefix in urlhandlers]):
                 song_url = os.path.join(params['music_dir'], song_url)
             self._metadata['xesam:url'] = song_url
-            cover = self.find_cover(song_url)
+            cover = self.find_cover(song_url, song_relpath)
             if cover:
                 self._metadata['mpris:artUrl'] = cover
 
@@ -606,7 +610,7 @@ class MPDWrapper(object):
         else:
             self.notify_about_track(self.metadata, state)
 
-    def find_cover(self, song_url):
+    def find_cover(self, song_url, song_relpath):
         if song_url.startswith('file://'):
             song_path = song_url[7:]
             song_dir = os.path.dirname(song_path)
@@ -646,6 +650,13 @@ class MPDWrapper(object):
                     f = os.path.expanduser(template % (artist, album))
                     if os.path.exists(f):
                         return 'file://' + f
+
+        # Remote cover art
+        if params['cover_url']:
+            cover_url = params['cover_url'] + os.path.dirname(song_relpath)
+            if params['cover_image']: cover_url += '/' + params['cover_image']
+            return cover_url
+
         return None
 
     def last_status(self):
@@ -1187,6 +1198,7 @@ Note: Environment variables MPD_HOST and MPD_PORT can be used instead of above
       arguments.
 
      -p, --path=PATH        Sets the library path of MPD to PATH
+     -c, --cover-url=URL    Sets the cover art url
      -d, --debug            Run in debug mode
      -v, --version          mpDris2 version
 
@@ -1226,12 +1238,17 @@ if __name__ == '__main__':
     if config.has_option('Library', 'cover_regex'):
         params['cover_regex'] = re.compile(config.get('Library', 'cover_regex'), re.I | re.X)
 
+    if config.has_option('Library', 'cover_url'):
+        params['cover_url'] = config.get('Library', 'cover_url')
+    if config.has_option('Library', 'cover_image'):
+        params['cover_image'] = config.get('Library', 'cover_image')
+
     for bling in ['mmkeys', 'notify']:
         if config.has_option('Bling', bling):
             params[bling] = config.getboolean('Bling', bling)
 
     try:
-        (opts, args) = getopt.getopt(sys.argv[1:], 'hdvp:', ['help', 'debug', 'version', 'path='])
+        (opts, args) = getopt.getopt(sys.argv[1:], 'hdvp:c:', ['help', 'debug', 'version', 'path=', 'cover-url='])
     except getopt.GetoptError as ex:
         (msg, opt) = ex.args
         print("%s: %s" % (sys.argv[0], msg))
@@ -1248,6 +1265,8 @@ if __name__ == '__main__':
             sys.exit(0)
         elif opt in ['-p', '--path']:
             music_dir = arg
+        elif opt in ['-c', '--cover-url']:
+            params['cover_url'] = arg
         elif opt in ['-d', '--debug']:
             log_level = logging.DEBUG
         elif opt in ['-v', '--version']:
